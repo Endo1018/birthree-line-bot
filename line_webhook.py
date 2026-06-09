@@ -128,7 +128,7 @@ async def webhook(request: Request):
         user_id = event["source"]["userId"]
 
         # 受付確認（即座に返信）
-        reply_text(reply_token, [f"「{topic}」の記事を生成中です...\n少々お待ちください（約30秒）"])
+        reply_text(reply_token, [f"「{topic}」をリサーチして記事を生成中です...\n少々お待ちください（約1〜2分）"])
 
         # 記事生成をバックグラウンドスレッドで実行（タイムアウト回避）
         def generate_and_push(topic=topic, user_id=user_id):
