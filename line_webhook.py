@@ -68,15 +68,18 @@ def run_article_generation(topic: str) -> tuple[str, str]:
     # article_generator.py と同じ環境にある前提でインポート
     import sys
     sys.path.insert(0, os.path.dirname(__file__))
-    from article_generator import generate_article_ja, generate_article_en, save_draft
+    from article_generator import research_topic, generate_article_ja, generate_article_en, save_draft
     import anthropic
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(api_key=api_key)
     date_str = datetime.today().strftime("%Y-%m-%d")
 
+    # リサーチ
+    research = research_topic(client, topic)
+
     # 日本語記事
-    article_ja = generate_article_ja(client, topic)
+    article_ja = generate_article_ja(client, topic, research)
     import re
     slug = re.sub(r"[^\w\s-]", "", article_ja.get("slug", topic).lower())
     slug = re.sub(r"[\s_-]+", "-", slug).strip("-")[:50]
@@ -84,7 +87,7 @@ def run_article_generation(topic: str) -> tuple[str, str]:
     path_ja = save_draft(article_ja["title"], article_ja["body"], "ja", slug, date_str)
 
     # 英語記事
-    article_en = generate_article_en(client, topic, article_ja)
+    article_en = generate_article_en(client, topic, article_ja, research)
     path_en = save_draft(article_en["title"], article_en["body"], "en", slug, date_str)
 
     return article_ja["title"], article_ja["body"], article_en["title"], article_en["body"], str(path_ja), str(path_en)

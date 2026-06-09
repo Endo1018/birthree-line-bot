@@ -29,9 +29,40 @@ def slugify(text: str) -> str:
     return text.strip("-")[:50]
 
 
-def generate_article_ja(client: anthropic.Anthropic, topic: str) -> dict:
+def research_topic(client: anthropic.Anthropic, topic: str) -> str:
+    """Web検索でトピックをリサーチして情報を収集"""
+    print(f"🔍 リサーチ中: {topic}")
+
+    message = client.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=4000,
+        tools=[{"type": "web_search_20250305", "name": "web_search"}],
+        messages=[{"role": "user", "content": f"""ホーチミン（ベトナム）に関する以下のトピックについてリサーチしてください。
+実際の店名・住所・営業時間・価格帯・特徴などの最新情報を収集してください。
+
+トピック: {topic}
+
+日本語で情報をまとめてください。"""
+        }],
+    )
+
+    # テキスト結果を結合して返す
+    result = ""
+    for block in message.content:
+        if hasattr(block, "text"):
+            result += block.text
+    return result
+
+
+def generate_article_ja(client: anthropic.Anthropic, topic: str, research: str = "") -> dict:
     """日本語記事を生成（Birthree CHAMPACA スタイル）"""
     print(f"📝 日本語記事を生成中: {topic}")
+
+    research_section = f"""
+【リサーチ済み情報（必ずこの情報を使って書くこと）】
+{research}
+
+""" if research else ""
 
     prompt = f"""あなたはホーチミン在住のライターです。
 Birthree CHAMPACA（ホーチミン1区のニッチ香水専門店）のnote記事を書いています。
@@ -52,7 +83,7 @@ Birthree CHAMPACA（ホーチミン1区のニッチ香水専門店）のnote記�
 Google Maps：https://share.google.com/diOGCdTYHuAGSQQwh
 営業時間：10:00〜22:00
 
-トピック: {topic}
+{research_section}トピック: {topic}
 
 以下のJSON形式で返してください（コードブロックなし）:
 {{
@@ -95,9 +126,15 @@ def _parse_article_json(raw: str) -> dict:
         return {"title": "記事", "slug": "article", "body": raw}
 
 
-def generate_article_en(client: anthropic.Anthropic, topic: str, article_ja: dict) -> dict:
+def generate_article_en(client: anthropic.Anthropic, topic: str, article_ja: dict, research: str = "") -> dict:
     """英語記事を生成（Medium向け、翻訳でなく再構成）"""
     print("🌐 英語版を生成中（Medium向け）...")
+
+    research_section = f"""
+Research data (use this factual information in the article):
+{research}
+
+""" if research else ""
 
     prompt = f"""You are a writer based in Ho Chi Minh City covering local culture and lifestyle for English-speaking tourists.
 Write a Medium article for Birthree CHAMPACA (a niche perfume boutique in District 1, HCMC).
@@ -116,7 +153,7 @@ Fixed CTA at the end — one bridge sentence connecting the article topic to Bir
 Google Maps: https://share.google.com/diOGCdTYHuAGSQQwh
 Hours: 10:00–22:00
 
-Topic: {topic}
+{research_section}Topic: {topic}
 Japanese article title for reference: {article_ja['title']}
 
 Return JSON only (no code blocks):
