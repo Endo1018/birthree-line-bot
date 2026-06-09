@@ -147,7 +147,7 @@ async def webhook(request: Request):
 def save_to_notion(topic: str, title_ja: str, body_ja: str, title_en: str, body_en: str):
     """記事をNotionデータベースに保存"""
     from notion_client import Client
-    notion = Client(auth=os.getenv("NOTION_TOKEN"))
+    notion = Client(auth=os.getenv("NOTION_AUTH"))
     db_id = os.getenv("NOTION_DATABASE_ID")
 
     def text_to_blocks(text: str) -> list:
