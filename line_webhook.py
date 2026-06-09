@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import base64
 import threading
+import subprocess
 from datetime import datetime
 
 import requests
@@ -130,18 +131,32 @@ async def webhook(request: Request):
         def generate_and_push(topic=topic, user_id=user_id):
             try:
                 title_ja, body_ja, path_ja, path_en = run_article_generation(topic)
-                # 本文を4500字ずつ分割（LINE上限5000字）
-                chunks = [body_ja[i:i+4500] for i in range(0, len(body_ja), 4500)]
-                messages = [f"✅ できました！\n\n📌 {title_ja}"] + chunks
-                # LINEは1回のpushで最大5件なので複数回に分けて送信
-                for i in range(0, len(messages), 5):
-                    push_messages(user_id, messages[i:i+5])
+                # GitHubへ自動push
+                github_push(title_ja, path_ja, path_en)
+                push_messages(user_id, [
+                    f"✅ できました！\n\n📌 {title_ja}\n\nGitHubにpushしました。git pull で取得できます。",
+                ])
             except Exception as e:
                 push_messages(user_id, [f"❌ 生成エラー: {str(e)}"])
 
         threading.Thread(target=generate_and_push, daemon=True).start()
 
     return JSONResponse(content={"status": "ok"})
+
+
+def github_push(title: str, path_ja: str, path_en: str):
+    """生成した記事をGitHubへ自動コミット＆push"""
+    token = os.getenv("GITHUB_TOKEN")
+    if not token:
+        return
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    def run(cmd):
+        subprocess.run(cmd, cwd=repo_dir, capture_output=True)
+    run(["git", "config", "user.email", "bot@birthree.com"])
+    run(["git", "config", "user.name", "Birthree Bot"])
+    run(["git", "add", path_ja, path_en])
+    run(["git", "commit", "-m", f"Add article: {title}"])
+    run(["git", "push", f"https://x-access-token:{token}@github.com/Endo1018/birthree-line-bot.git", "main"])
 
 
 def push_messages(user_id: str, messages: list[str]):
