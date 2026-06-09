@@ -71,7 +71,28 @@ Google Maps：https://share.google.com/diOGCdTYHuAGSQQwh
     if "```" in raw:
         raw = re.sub(r"```json?\n?", "", raw)
         raw = re.sub(r"```", "", raw)
-    return json.loads(raw.strip())
+    return _parse_article_json(raw.strip())
+
+
+def _parse_article_json(raw: str) -> dict:
+    """JSON解析。失敗時はタイトル・本文を正規表現で抽出してフォールバック"""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # タイトルと本文をそれぞれ抽出してフォールバック
+        title_match = re.search(r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
+        slug_match = re.search(r'"slug"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
+        # bodyは"body":の後からJSON末尾までを丸ごと取得
+        body_match = re.search(r'"body"\s*:\s*"([\s\S]*?)"\s*\}?\s*$', raw)
+        if title_match and body_match:
+            body = body_match.group(1).replace("\\n", "\n").replace('\\"', '"')
+            return {
+                "title": title_match.group(1),
+                "slug": slug_match.group(1) if slug_match else "",
+                "body": body,
+            }
+        # 最終手段：全文を本文として返す
+        return {"title": "記事", "slug": "article", "body": raw}
 
 
 def generate_article_en(client: anthropic.Anthropic, topic: str, article_ja: dict) -> dict:
@@ -114,7 +135,7 @@ Return JSON only (no code blocks):
     if "```" in raw:
         raw = re.sub(r"```json?\n?", "", raw)
         raw = re.sub(r"```", "", raw)
-    return json.loads(raw.strip())
+    return _parse_article_json(raw.strip())
 
 
 def save_draft(title: str, body: str, lang: str, slug: str, date_str: str) -> Path:
