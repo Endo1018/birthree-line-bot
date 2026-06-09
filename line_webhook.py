@@ -130,11 +130,8 @@ async def webhook(request: Request):
         def generate_and_push(topic=topic, user_id=user_id):
             try:
                 title_ja, body_ja, path_ja, path_en = run_article_generation(topic)
-                preview = body_ja[:900] + "…" if len(body_ja) > 900 else body_ja
                 push_messages(user_id, [
-                    f"✅ 記事生成完了！\n\n📌 {title_ja}",
-                    preview,
-                    f"📁 保存先:\n・日本語: {path_ja}\n・英語:   {path_en}",
+                    f"✅ できました！\n\n📌 {title_ja}\n\n📁 保存先:\n・日本語: {path_ja}\n・英語:   {path_en}",
                 ])
             except Exception as e:
                 push_messages(user_id, [f"❌ 生成エラー: {str(e)}"])
