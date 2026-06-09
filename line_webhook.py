@@ -166,7 +166,8 @@ def save_to_notion(topic: str, title_ja: str, body_ja: str, title_en: str, body_
                     blocks.append({"object":"block","type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":chunk}}]}})
         return blocks[:100]  # Notionは1回100ブロックまで
 
-    notion.pages.create(
+    # ページ作成（日本語本文）
+    page = notion.pages.create(
         parent={"database_id": db_id},
         properties={
             "Title": {"title": [{"text": {"content": title_ja}}]},
@@ -174,7 +175,12 @@ def save_to_notion(topic: str, title_ja: str, body_ja: str, title_en: str, body_
             "Date": {"date": {"start": datetime.today().strftime("%Y-%m-%d")}},
             "Status": {"select": {"name": "下書き"}},
         },
-        children=text_to_blocks(f"# 🇯🇵 日本語版\n\n{body_ja}\n\n---\n\n# 🇺🇸 English版\n\n{title_en}\n\n{body_en}"),
+        children=text_to_blocks(f"# 🇯🇵 日本語版\n\n{body_ja}"),
+    )
+    # 英語本文を追記
+    notion.blocks.children.append(
+        page["id"],
+        children=text_to_blocks(f"---\n\n# 🇺🇸 English版\n\n{title_en}\n\n{body_en}"),
     )
 
 
