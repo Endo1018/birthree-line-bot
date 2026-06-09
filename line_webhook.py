@@ -9,6 +9,7 @@ import json
 import hashlib
 import hmac
 import base64
+import threading
 from datetime import datetime
 
 import requests
@@ -120,21 +121,25 @@ async def webhook(request: Request):
             reply_text(reply_token, ["トピックを送ってください。\n例: ホーチミンのカフェ5選"])
             continue
 
-        # 受付確認
+        user_id = event["source"]["userId"]
+
+        # 受付確認（即座に返信）
         reply_text(reply_token, [f"「{topic}」の記事を生成中です...\n少々お待ちください（約30秒）"])
 
-        # 記事生成（バックグラウンドで処理して後からPush）
-        try:
-            title_ja, body_ja, path_ja, path_en = run_article_generation(topic)
-            # 本文は5000字制限があるので冒頭900字 + ファイルパス通知
-            preview = body_ja[:900] + "…" if len(body_ja) > 900 else body_ja
-            push_messages(event["source"]["userId"], [
-                f"✅ 記事生成完了！\n\n📌 {title_ja}",
-                preview,
-                f"📁 保存先:\n・日本語: {path_ja}\n・英語:   {path_en}",
-            ])
-        except Exception as e:
-            push_messages(event["source"]["userId"], [f"❌ 生成エラー: {str(e)}"])
+        # 記事生成をバックグラウンドスレッドで実行（タイムアウト回避）
+        def generate_and_push(topic=topic, user_id=user_id):
+            try:
+                title_ja, body_ja, path_ja, path_en = run_article_generation(topic)
+                preview = body_ja[:900] + "…" if len(body_ja) > 900 else body_ja
+                push_messages(user_id, [
+                    f"✅ 記事生成完了！\n\n📌 {title_ja}",
+                    preview,
+                    f"📁 保存先:\n・日本語: {path_ja}\n・英語:   {path_en}",
+                ])
+            except Exception as e:
+                push_messages(user_id, [f"❌ 生成エラー: {str(e)}"])
+
+        threading.Thread(target=generate_and_push, daemon=True).start()
 
     return JSONResponse(content={"status": "ok"})
 
