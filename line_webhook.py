@@ -130,9 +130,12 @@ async def webhook(request: Request):
         def generate_and_push(topic=topic, user_id=user_id):
             try:
                 title_ja, body_ja, path_ja, path_en = run_article_generation(topic)
-                push_messages(user_id, [
-                    f"✅ できました！\n\n📌 {title_ja}\n\n📁 保存先:\n・日本語: {path_ja}\n・英語:   {path_en}",
-                ])
+                # 本文を4500字ずつ分割（LINE上限5000字）
+                chunks = [body_ja[i:i+4500] for i in range(0, len(body_ja), 4500)]
+                messages = [f"✅ できました！\n\n📌 {title_ja}"] + chunks
+                # LINEは1回のpushで最大5件なので複数回に分けて送信
+                for i in range(0, len(messages), 5):
+                    push_messages(user_id, messages[i:i+5])
             except Exception as e:
                 push_messages(user_id, [f"❌ 生成エラー: {str(e)}"])
 
