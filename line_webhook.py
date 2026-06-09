@@ -87,7 +87,7 @@ def run_article_generation(topic: str) -> tuple[str, str]:
     article_en = generate_article_en(client, topic, article_ja)
     path_en = save_draft(article_en["title"], article_en["body"], "en", slug, date_str)
 
-    return article_ja["title"], article_ja["body"], str(path_ja), str(path_en)
+    return article_ja["title"], article_ja["body"], article_en["title"], article_en["body"], str(path_ja), str(path_en)
 
 
 # ─────────────────────────────────────────────
@@ -130,11 +130,11 @@ async def webhook(request: Request):
         # 記事生成をバックグラウンドスレッドで実行（タイムアウト回避）
         def generate_and_push(topic=topic, user_id=user_id):
             try:
-                title_ja, body_ja, path_ja, path_en = run_article_generation(topic)
-                # GitHubへ自動push
-                github_push(title_ja, path_ja, path_en)
+                title_ja, body_ja, title_en, body_en, path_ja, path_en = run_article_generation(topic)
+                # Notionへ保存
+                save_to_notion(topic, title_ja, body_ja, title_en, body_en)
                 push_messages(user_id, [
-                    f"✅ できました！\n\n📌 {title_ja}\n\nGitHubにpushしました。git pull で取得できます。",
+                    f"✅ できました！\n\n📌 {title_ja}\n\nNotionに保存しました。",
                 ])
             except Exception as e:
                 push_messages(user_id, [f"❌ 生成エラー: {str(e)}"])
@@ -142,6 +142,40 @@ async def webhook(request: Request):
         threading.Thread(target=generate_and_push, daemon=True).start()
 
     return JSONResponse(content={"status": "ok"})
+
+
+def save_to_notion(topic: str, title_ja: str, body_ja: str, title_en: str, body_en: str):
+    """記事をNotionデータベースに保存"""
+    from notion_client import Client
+    notion = Client(auth=os.getenv("NOTION_TOKEN"))
+    db_id = os.getenv("NOTION_DATABASE_ID")
+
+    def text_to_blocks(text: str) -> list:
+        """テキストを2000字以内のparagraphブロックに分割"""
+        blocks = []
+        for line in text.split("\n"):
+            # 見出し
+            if line.startswith("## "):
+                blocks.append({"object":"block","type":"heading_2","heading_2":{"rich_text":[{"type":"text","text":{"content":line[3:]}}]}})
+            elif line.startswith("# "):
+                blocks.append({"object":"block","type":"heading_1","heading_1":{"rich_text":[{"type":"text","text":{"content":line[2:]}}]}})
+            else:
+                # 2000字制限で分割
+                for i in range(0, max(len(line), 1), 2000):
+                    chunk = line[i:i+2000]
+                    blocks.append({"object":"block","type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":chunk}}]}})
+        return blocks[:100]  # Notionは1回100ブロックまで
+
+    notion.pages.create(
+        parent={"database_id": db_id},
+        properties={
+            "Title": {"title": [{"text": {"content": title_ja}}]},
+            "Topic": {"rich_text": [{"text": {"content": topic}}]},
+            "Date": {"date": {"start": datetime.today().strftime("%Y-%m-%d")}},
+            "Status": {"select": {"name": "下書き"}},
+        },
+        children=text_to_blocks(f"# 🇯🇵 日本語版\n\n{body_ja}\n\n---\n\n# 🇺🇸 English版\n\n{title_en}\n\n{body_en}"),
+    )
 
 
 def github_push(title: str, path_ja: str, path_en: str):
