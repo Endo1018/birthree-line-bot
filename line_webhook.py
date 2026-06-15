@@ -117,15 +117,18 @@ async def webhook(request: Request):
         reply_token = event["replyToken"]
         topic = event["message"]["text"].strip()
 
+        user_id = event["source"]["userId"]
+
+        # ユーザーID確認コマンド
+        if topic == "/myid":
+            reply_text(reply_token, [f"あなたの LINE User ID:\n{user_id}"])
+            continue
+
         # 「/記事 トピック」または「トピックだけ」どちらでも動く
         if topic.startswith("/記事 "):
             topic = topic[4:].strip()
 
         if not topic:
-            reply_text(reply_token, ["トピックを送ってください。\n例: ホーチミンのカフェ5選"])
-            continue
-
-        user_id = event["source"]["userId"]
 
         # 受付確認（即座に返信）
         reply_text(reply_token, [f"「{topic}」をリサーチして記事を生成中です...\n少々お待ちください（約1〜2分）"])
@@ -154,22 +157,26 @@ def save_to_notion(topic: str, title_ja: str, body_ja: str, title_en: str, body_
     db_id = os.getenv("NOTION_DATABASE_ID")
 
     def text_to_blocks(text: str) -> list:
-        """テキストを2000字以内のparagraphブロックに分割"""
+        """テキストを2000字以内のparagraphブロックに分割（上限なし）"""
         blocks = []
         for line in text.split("\n"):
-            # 見出し
             if line.startswith("## "):
                 blocks.append({"object":"block","type":"heading_2","heading_2":{"rich_text":[{"type":"text","text":{"content":line[3:]}}]}})
             elif line.startswith("# "):
                 blocks.append({"object":"block","type":"heading_1","heading_1":{"rich_text":[{"type":"text","text":{"content":line[2:]}}]}})
             else:
-                # 2000字制限で分割
                 for i in range(0, max(len(line), 1), 2000):
                     chunk = line[i:i+2000]
                     blocks.append({"object":"block","type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":chunk}}]}})
-        return blocks[:100]  # Notionは1回100ブロックまで
+        return blocks
 
-    # ページ作成（日本語本文）
+    def append_blocks_chunked(page_id: str, blocks: list):
+        """100ブロックずつ分割してNotionに追記"""
+        for i in range(0, len(blocks), 100):
+            notion.blocks.children.append(page_id, children=blocks[i:i+100])
+
+    # ページ作成（日本語本文 — 最初の100ブロック）
+    ja_blocks = text_to_blocks(f"# 🇯🇵 日本語版\n\n{body_ja}")
     page = notion.pages.create(
         parent={"database_id": db_id},
         properties={
@@ -178,13 +185,15 @@ def save_to_notion(topic: str, title_ja: str, body_ja: str, title_en: str, body_
             "Date": {"date": {"start": datetime.today().strftime("%Y-%m-%d")}},
             "Status": {"select": {"name": "下書き"}},
         },
-        children=text_to_blocks(f"# 🇯🇵 日本語版\n\n{body_ja}"),
+        children=ja_blocks[:100],
     )
-    # 英語本文を追記
-    notion.blocks.children.append(
-        page["id"],
-        children=text_to_blocks(f"---\n\n# 🇺🇸 English版\n\n{title_en}\n\n{body_en}"),
-    )
+    # 日本語の残りブロックがあれば追記
+    if len(ja_blocks) > 100:
+        append_blocks_chunked(page["id"], ja_blocks[100:])
+
+    # 英語本文を追記（100ブロック超でも対応）
+    en_blocks = text_to_blocks(f"---\n\n# 🇺🇸 English版\n\n{title_en}\n\n{body_en}")
+    append_blocks_chunked(page["id"], en_blocks)
 
 
 def github_push(title: str, path_ja: str, path_en: str):
