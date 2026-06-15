@@ -129,6 +129,8 @@ async def webhook(request: Request):
             topic = topic[4:].strip()
 
         if not topic:
+            reply_text(reply_token, ["トピックを送ってください。\n例: ホーチミンのカフェ5選"])
+            continue
 
         # 受付確認（即座に返信）
         reply_text(reply_token, [f"「{topic}」をリサーチして記事を生成中です...\n少々お待ちください（約1〜2分）"])
